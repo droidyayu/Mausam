@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Mausam</string>
+    <string name="title_activity_main">MainActivity</string>
+    <string name="later_today_text">Later today</string>
+    <string name="retry_text">Retry</string>
+    <string name="tomorrow_text">Tomorrow</string>
+    <string name="current_location_string">Berlin</string>
+    <string name="description">Localized Description</string>
+    <string name="developer_name">Developed by Ayushi Gupta</string>
+</resources>
