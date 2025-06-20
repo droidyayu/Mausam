@@ -5,6 +5,10 @@ It contains customisation for stack trace data and categorisation logics for lea
 
 [![Twitter Follow](https://img.shields.io/twitter/follow/droidyayu?label=Follow&style=social)](https://twitter.com/DroidyAyu)
 
+## License
+This project is licensed under the MIT License – see the [LICENSE](LICENSE) file for details.
+
+
 ## Implementation
 Make sure to add google-service.json. 
 
