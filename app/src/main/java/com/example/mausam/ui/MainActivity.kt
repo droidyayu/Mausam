@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-@Preview
+@Preview(showBackground = true)
 fun MausamMainScreen() {
     val scaffoldState = rememberScaffoldState(rememberDrawerState(DrawerValue.Closed))
     val scope = rememberCoroutineScope()
@@ -61,8 +61,8 @@ fun MausamMainScreen() {
                 navController = navController
             )
         }
-    ) {
-        Navigation(navController = navController, paddingValues = it)
+    ) { paddingValues ->
+        Navigation(navController = navController, paddingValues = paddingValues)
     }
 }
 
@@ -73,25 +73,18 @@ fun TopBar(
 ) {
     TopAppBar(
         title = {
-            Row(
-                Modifier.fillMaxSize(),
-                verticalAlignment = Alignment.CenterVertically
+            Box(
+                Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
             ) {
-                ProvideTextStyle(value = MaterialTheme.typography.h6) {
-                    CompositionLocalProvider(
-                        LocalContentAlpha provides ContentAlpha.high,
-                    ) {
-                        Text(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(0.dp, 0.dp, 64.dp, 0.dp),
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            text = stringResource(R.string.current_location_string),
-                            color = Color.White
-                        )
-                    }
-                }
+                Text(
+                    text = stringResource(R.string.current_location_string),
+                    style = MaterialTheme.typography.h6,
+                    maxLines = 1,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(end = 64.dp)
+                )
             }
         },
         navigationIcon = {
@@ -100,14 +93,15 @@ fun TopBar(
                     scaffoldState.drawerState.open()
                 }
             }) {
-                Image(
+                Icon(
                     painter = painterResource(id = R.drawable.ic_menu),
-                    stringResource(R.string.description)
+                    contentDescription = stringResource(R.string.description),
+                    tint = Color.White
                 )
             }
         },
-        backgroundColor = Color(0, 0, 0, 0),
-        contentColor = Color.Black,
+        backgroundColor = Color.Transparent,
+        contentColor = Color.White,
         elevation = 0.dp,
     )
 }
@@ -117,7 +111,7 @@ fun Navigation(
     navController: NavHostController,
     paddingValues: PaddingValues
 ) {
-    NavHost(navController, startDestination = NavDrawerItem.Home.route) {
+    NavHost(navController, startDestination = NavDrawerItem.Home.route, Modifier.padding(paddingValues)) {
         composable(NavDrawerItem.Home.route) {
             WeatherScreen()
         }
