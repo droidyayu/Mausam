@@ -59,7 +59,7 @@ Here’s the code diff:
 
     if response.status_code != 200:
         print(f"[ERROR] OpenAI API error: {response.status_code} - {response.text}")
-        return "⚠️ AI Review failed to generate comment."
+        return "⚠️ AI Review failed to generate comment. Try again"
 
     comment = response.json()["choices"][0]["message"]["content"].strip()
     print(f"[INFO] Review comment generated for {filename}")
