@@ -21,7 +21,9 @@ jobs:
         run: pip install openai requests
 
       - name: Run AI Review
-        run: python3 ai_review.py
+        run: python3 .github/scripts/ai_review.py
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            GITHUB_REPOSITORY: ${{ github.repository }}
+            GITHUB_REF: ${{ github.ref }}
