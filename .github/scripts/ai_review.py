@@ -1,15 +1,17 @@
 import os
 import requests
-import base64
+from vertexai.preview.language_models import TextGenerationModel
+from vertexai.preview import vertex_ai
 
-# Load tokens and metadata
+# Initialize Vertex AI
+PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "ai-code-review-463612")
+LOCATION = os.getenv("GOOGLE_CLOUD_REGION", "europe-west3")
+vertex_ai.init(project=PROJECT_ID, location=LOCATION)
+
+# Load GitHub info from environment
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 REPO = os.getenv("GITHUB_REPOSITORY")  # e.g. "username/repo"
-PR_NUMBER = os.getenv("GITHUB_REF").split("/")[2]  # Fix for pull_request ref format
-
-print(f"[INFO] Repository: {REPO}")
-print(f"[INFO] Pull Request Number: {PR_NUMBER}")
+PR_NUMBER = os.getenv("GITHUB_REF", "").split("/")[-1]  # Extract PR number from ref
 
 HEADERS = {
     "Authorization": f"Bearer {GITHUB_TOKEN}",
@@ -44,24 +46,16 @@ Use a constructive, friendly tone like a helpful team member. Format the answer 
 Here’s the code diff:
 {diff_hunk}
 """
-    response = requests.post(
-        "https://api.openai.com/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json"
-        },
-        json={
-            "model": "gpt-3.5-turbo",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.4
-        }
+
+    model = TextGenerationModel.from_pretrained("gemini-ultra-1")  # or your preferred Gemini model
+    response = model.predict(
+        prompt,
+        max_output_tokens=1024,
+        temperature=0.4,
+        top_p=0.8,
     )
 
-    if response.status_code != 200:
-        print(f"[ERROR] OpenAI API error: {response.status_code} - {response.text}")
-        return "⚠️ AI Review failed to generate comment. Try again"
-
-    comment = response.json()["choices"][0]["message"]["content"].strip()
+    comment = response.text.strip()
     print(f"[INFO] Review comment generated for {filename}")
     return comment
 

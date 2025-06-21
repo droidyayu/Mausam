@@ -18,12 +18,18 @@ jobs:
           python-version: 3.11
 
       - name: Install dependencies
-        run: pip install openai requests
+        run: pip install google-cloud-aiplatform requests
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - name: Run AI Review
-        run: python3 .github/scripts/ai_review.py
+        run: python3 .github/scripts/ai_code_review.py
         env:
-            OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-            GITHUB_REPOSITORY: ${{ github.repository }}
-            GITHUB_REF: ${{ github.ref }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF: ${{ github.ref }}
+          GOOGLE_CLOUD_PROJECT: ai-code-review-463612
+          GOOGLE_CLOUD_REGION: europe-west3
