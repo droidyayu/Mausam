@@ -18,16 +18,13 @@ jobs:
           python-version: 3.11
 
       - name: Install dependencies
-        run: pip install google-cloud-aiplatform requests
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v1
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+        run: pip install requests
 
       - name: Run AI Review
         run: python3 .github/scripts/ai_code_review.py
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_REF: ${{ github.ref }}
