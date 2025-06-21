@@ -32,7 +32,7 @@ class LeakingActivityTest {
 
 
     @Test
-    fun initiateLeakActivityRendering() {
+    fun initiateLeakActivityRenderingAndTest() {
         launchActivity<LeakingActivity>().use { scenario ->
             scenario.moveToState(Lifecycle.State.CREATED)
         }

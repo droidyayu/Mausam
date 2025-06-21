@@ -56,13 +56,29 @@ def get_changed_files():
     return response.json()
 
 
+def clean_gemini_comment(comment):
+    """
+    Clean and format Gemini's response for GitHub inline comments.
+    - Trims whitespace
+    - Limits length to 650 chars
+    - Removes excessive blank lines
+    """
+    comment = comment.strip()
+    comment = '\n'.join([line.rstrip() for line in comment.splitlines() if line.strip() != ''])
+    max_length = 650
+    if len(comment) > max_length:
+        comment = comment[:max_length] + "…"
+    return comment
+
 def generate_review_comment(diff_hunk, filename):
     prompt = f"""
 You're a senior Android reviewer. Carefully review this code diff from `{filename}`.
-Check for deprecated APIs, performance bottlenecks, testability, and Android best practices.
 
-Return only constructive inline comments (like a helpful engineer). Avoid generic feedback.
-Use concise bullet points when possible.
+- Only return specific, actionable, and concise inline review comments.
+- Use clear markdown formatting for code, lists, or warnings.
+- Avoid generic feedback. Focus on deprecated APIs, performance, testability, and Android best practices.
+- Each comment should be suitable for direct posting as a GitHub inline review.
+- If the diff is fine, return a short positive note.
 
 Diff:
 {diff_hunk}
@@ -87,8 +103,9 @@ Diff:
     if response.status_code == 200:
         result = response.json()
         comment = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-        debug_log(f"Extracted comment: {comment.strip()}")
-        return comment.strip() or "⚠️ No useful feedback was generated."
+        comment = clean_gemini_comment(comment)
+        debug_log(f"Extracted comment: {comment}")
+        return comment or "⚠️ No useful feedback was generated."
     else:
         print(f"[ERROR] Gemini API error {response.status_code}: {response.text}")
         return "⚠️ Gemini API error."
@@ -148,12 +165,69 @@ def post_inline_comment(body, path, position):
         print(f"[INFO] Comment posted on {path}")
 
 
+def fetch_file_content(repo, path):
+    url = f"https://api.github.com/repos/{repo}/contents/{path}"
+    response = requests.get(url, headers=HEADERS)
+    if response.status_code == 200:
+        data = response.json()
+        # If file is not binary
+        if data.get('encoding') == 'base64':
+            import base64
+            return base64.b64decode(data['content']).decode('utf-8', errors='replace')
+        else:
+            return data.get('content', '')
+    else:
+        print(f"[ERROR] Could not fetch {path}: {response.status_code}")
+        return ''
+
+def generate_test_coverage_comment(source_code, test_code, source_filename, test_filename):
+    prompt = f"""
+You are an expert software reviewer. Analyze the following source code and its unit tests.
+
+Source file: {source_filename}
+---
+{source_code}
+
+Test file: {test_filename}
+---
+{test_code}
+
+List any important test scenarios that are missing or weakly covered. Format your answer as a markdown bullet list suitable for a GitHub code review comment. If all important scenarios are covered, reply with a short positive note.
+"""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    data = {"contents": [{"parts": [{"text": prompt}]}]}
+    debug_log(f"[Coverage] Gemini prompt: {prompt[:200]}...")
+    response = requests.post(url, headers=headers, data=json.dumps(data))
+    debug_log(f"[Coverage] Response status: {response.status_code}")
+    debug_log(f"[Coverage] Response text: {response.text}")
+    if response.status_code == 200:
+        result = response.json()
+        comment = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+        comment = clean_gemini_comment(comment)
+        return comment
+    else:
+        print(f"[ERROR] Gemini API error {response.status_code}: {response.text}")
+        return None
+
+def post_pr_comment(body):
+    url = f"https://api.github.com/repos/{REPO}/issues/{PR_NUMBER}/comments"
+    payload = {"body": body}
+    response = requests.post(url, headers=HEADERS, json=payload)
+    if response.status_code != 201:
+        print(f"[ERROR] Failed to post PR comment: {response.status_code} - {response.text}")
+    else:
+        print(f"[INFO] PR summary comment posted.")
+
 def main():
     print("[INFO] Starting AI code review process...")
     files = get_changed_files()
     if not files:
         print("[INFO] No changed files found.")
         return
+
+    test_file_exts = ("Test.kt", "Test.java", "_test.py", "test_", "Test.py")
+    coverage_comments = []
 
     for f in files:
         filename = f.get("filename", "")
@@ -162,13 +236,39 @@ def main():
 
         print(f"[INFO] Processing file: {filename} (status: {status})")
 
-        if not filename.endswith((".kt", ".java")):
-            print(f"[INFO] Skipping non-Kotlin/Java file: {filename}")
-            continue
+        # --- Regular code review for Kotlin/Java ---
+        if filename.endswith((".kt", ".java")) and not filename.endswith(test_file_exts):
+            if hunk and status in ["modified", "added"]:
+                comment = generate_review_comment(hunk, filename)
+                post_inline_comment(comment, filename, position=1)
 
-        if hunk and status in ["modified", "added"]:
-            comment = generate_review_comment(hunk, filename)
-            post_inline_comment(comment, filename, position=1)
+        # --- Test coverage analysis ---
+        if filename.endswith(test_file_exts):
+            test_code = fetch_file_content(REPO, filename)
+            # Try to infer the source file path
+            if filename.endswith("Test.kt"):
+                source_filename = filename.replace("Test.kt", ".kt").replace("/test/", "/main/")
+            elif filename.endswith("Test.java"):
+                source_filename = filename.replace("Test.java", ".java").replace("/test/", "/main/")
+            elif filename.endswith("_test.py"):
+                source_filename = filename.replace("_test.py", ".py")
+            elif filename.endswith("Test.py"):
+                source_filename = filename.replace("Test.py", ".py")
+            elif filename.startswith("test_") and filename.endswith(".py"):
+                source_filename = filename.replace("test_", "", 1)
+            else:
+                source_filename = None
+            source_code = fetch_file_content(REPO, source_filename) if source_filename else ''
+            if source_code:
+                coverage_comment = generate_test_coverage_comment(source_code, test_code, source_filename, filename)
+                if coverage_comment and not any(x in coverage_comment.lower() for x in ["all important scenarios are covered", "no missing test"]):
+                    coverage_comments.append(f"**Test coverage review for `{filename}`:**\n{coverage_comment}")
+
+    # Post summary comment if any missing/weak coverage is found
+    if coverage_comments:
+        summary = "\n\n".join(coverage_comments)
+        post_pr_comment(summary)
+
 
 
 if __name__ == "__main__":
