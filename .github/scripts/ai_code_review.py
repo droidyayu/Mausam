@@ -95,6 +95,17 @@ Diff:
 
 # Minimal test for Gemini API integration
 if __name__ == "__main__":
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    data = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": "Explain how AI works in a few words"}
+                ]
+            }
+        ]
+    }
     debug_log(f"Gemini API URL: {url}")
     debug_log(f"Request headers: {headers}")
     debug_log(f"Request data: {json.dumps(data)}")
