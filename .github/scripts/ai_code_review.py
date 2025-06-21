@@ -1,17 +1,49 @@
 import os
 import requests
 import json
+import sys
+
+# Debug flag
+DEBUG = True
+
+def debug_log(msg):
+    if DEBUG:
+        print(f"[DEBUG] {msg}")
 
 # === CONFIG ===
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+if not GITHUB_TOKEN:
+    print("[ERROR] GITHUB_TOKEN is not set!", file=sys.stderr)
+    exit(1)
+else:
+    debug_log(f"GITHUB_TOKEN starts with: {GITHUB_TOKEN[:6]}... (length: {len(GITHUB_TOKEN)})")
+
 REPO = os.getenv("GITHUB_REPOSITORY")  # Format: owner/repo
+if not REPO:
+    print("[ERROR] GITHUB_REPOSITORY is not set!", file=sys.stderr)
+    exit(1)
+else:
+    debug_log(f"GITHUB_REPOSITORY: {REPO}")
+
 PR_NUMBER = os.getenv("GITHUB_REF").split("/")[2]
+if not PR_NUMBER:
+    print("[ERROR] GITHUB_REF is not set or not in the correct format!", file=sys.stderr)
+    exit(1)
+else:
+    debug_log(f"GITHUB_REF: {PR_NUMBER}")
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    print("[ERROR] GEMINI_API_KEY is not set!", file=sys.stderr)
+    exit(1)
+else:
+    debug_log(f"GEMINI_API_KEY starts with: {GEMINI_API_KEY[:6]}... (length: {len(GEMINI_API_KEY)})")
 
 HEADERS = {
     "Authorization": f"Bearer {GITHUB_TOKEN}",
     "Accept": "application/vnd.github+json"
 }
+debug_log(f"HEADERS: {HEADERS}")
 
 
 def get_changed_files():
@@ -46,10 +78,16 @@ Diff:
             }
         ]
     }
+    debug_log(f"Gemini API URL: {url}")
+    debug_log(f"Request headers: {headers}")
+    debug_log(f"Request data: {json.dumps(data)}")
     response = requests.post(url, headers=headers, data=json.dumps(data))
+    debug_log(f"Response status: {response.status_code}")
+    debug_log(f"Response text: {response.text}")
     if response.status_code == 200:
         result = response.json()
         comment = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+        debug_log(f"Extracted comment: {comment.strip()}")
         return comment.strip() or "⚠️ No useful feedback was generated."
     else:
         print(f"[ERROR] Gemini API error {response.status_code}: {response.text}")
@@ -57,18 +95,12 @@ Diff:
 
 # Minimal test for Gemini API integration
 if __name__ == "__main__":
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-    headers = {"Content-Type": "application/json"}
-    data = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": "Explain how AI works in a few words"}
-                ]
-            }
-        ]
-    }
+    debug_log(f"Gemini API URL: {url}")
+    debug_log(f"Request headers: {headers}")
+    debug_log(f"Request data: {json.dumps(data)}")
     response = requests.post(url, headers=headers, data=json.dumps(data))
+    debug_log(f"Response status: {response.status_code}")
+    debug_log(f"Response text: {response.text}")
     if response.status_code == 200:
         result = response.json()
         print("Gemini API test response:")
