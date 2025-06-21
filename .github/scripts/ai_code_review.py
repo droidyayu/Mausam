@@ -1,19 +1,12 @@
 import os
 import requests
-import vertexai
-from vertexai.preview.language_models import TextGenerationModel
+import json
 
 # === CONFIG ===
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 REPO = os.getenv("GITHUB_REPOSITORY")  # Format: owner/repo
 PR_NUMBER = os.getenv("GITHUB_REF").split("/")[2]
-
-PROJECT_ID = "ai-code-review-463612"  # Replace with your actual project ID
-REGION = "europe-west3"  # Your chosen Vertex AI region
-
-# === INIT ===
-vertexai.init(project=PROJECT_ID, location=REGION)
-model = TextGenerationModel.from_pretrained("gemini-1.5-flash")  # Or gemini-1.5-pro if needed
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 HEADERS = {
     "Authorization": f"Bearer {GITHUB_TOKEN}",
@@ -42,17 +35,30 @@ Use concise bullet points when possible.
 Diff:
 {diff_hunk}
 """
-    print(f"[INFO] Generating review comment for {filename}...")
+    print(f"[INFO] Generating review comment for {filename} via Gemini API...")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    data = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ]
+    }
     try:
-        response = model.predict(
-            prompt=prompt,
-            temperature=0.4,
-            max_output_tokens=512
-        )
-        comment = response.text.strip()
-        return comment or "⚠️ No useful feedback was generated."
+        response = requests.post(url, headers=headers, data=json.dumps(data))
+        if response.status_code == 200:
+            result = response.json()
+            # Extract the generated text
+            comment = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+            return comment.strip() or "⚠️ No useful feedback was generated."
+        else:
+            print(f"[ERROR] Gemini API error {response.status_code}: {response.text}")
+            return "⚠️ Gemini API error."
     except Exception as e:
-        print(f"[ERROR] Failed to get response from Gemini: {e}")
+        print(f"[ERROR] Failed to get response from Gemini API: {e}")
         return "⚠️ Gemini failed to generate review. Try again."
 
 
