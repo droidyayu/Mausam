@@ -35,7 +35,6 @@ Use concise bullet points when possible.
 Diff:
 {diff_hunk}
 """
-    print(f"[INFO] Generating review comment for {filename} via Gemini API...")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
     data = {
@@ -47,19 +46,36 @@ Diff:
             }
         ]
     }
-    try:
-        response = requests.post(url, headers=headers, data=json.dumps(data))
-        if response.status_code == 200:
-            result = response.json()
-            # Extract the generated text
-            comment = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-            return comment.strip() or "⚠️ No useful feedback was generated."
-        else:
-            print(f"[ERROR] Gemini API error {response.status_code}: {response.text}")
-            return "⚠️ Gemini API error."
-    except Exception as e:
-        print(f"[ERROR] Failed to get response from Gemini API: {e}")
-        return "⚠️ Gemini failed to generate review. Try again."
+    response = requests.post(url, headers=headers, data=json.dumps(data))
+    if response.status_code == 200:
+        result = response.json()
+        comment = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+        return comment.strip() or "⚠️ No useful feedback was generated."
+    else:
+        print(f"[ERROR] Gemini API error {response.status_code}: {response.text}")
+        return "⚠️ Gemini API error."
+
+# Minimal test for Gemini API integration
+if __name__ == "__main__":
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    data = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": "Explain how AI works in a few words"}
+                ]
+            }
+        ]
+    }
+    response = requests.post(url, headers=headers, data=json.dumps(data))
+    if response.status_code == 200:
+        result = response.json()
+        print("Gemini API test response:")
+        print(result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", ""))
+    else:
+        print(f"[ERROR] Gemini API error {response.status_code}: {response.text}")
 
 
 def get_latest_commit_sha():
