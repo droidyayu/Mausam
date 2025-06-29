@@ -165,8 +165,10 @@ def post_inline_comment(body, path, position):
         print(f"[INFO] Comment posted on {path}")
 
 
-def fetch_file_content(repo, path):
-    url = f"https://api.github.com/repos/{repo}/contents/{path}"
+def fetch_file_content(repo, path, ref=None):
+    if ref is None:
+        ref = get_latest_commit_sha()
+    url = f"https://api.github.com/repos/{repo}/contents/{path}?ref={ref}"
     response = requests.get(url, headers=HEADERS)
     if response.status_code == 200:
         data = response.json()
@@ -177,7 +179,7 @@ def fetch_file_content(repo, path):
         else:
             return data.get('content', '')
     else:
-        print(f"[ERROR] Could not fetch {path}: {response.status_code}")
+        print(f"[ERROR] Could not fetch {path} at ref {ref}: {response.status_code}")
         return ''
 
 def generate_test_coverage_comment(source_code, test_code, source_filename, test_filename):
