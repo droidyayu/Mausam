@@ -146,11 +146,65 @@ def get_latest_commit_sha():
     return response.json()["head"]["sha"]
 
 
+def delete_outdated_inline_bot_comments():
+    """
+    Delete all bot inline comments whose file/position are not in the latest PR diff.
+    """
+    url = f"https://api.github.com/repos/{REPO}/pulls/{PR_NUMBER}/comments"
+    response = requests.get(url, headers=HEADERS)
+    if response.status_code != 200:
+        print(f"[ERROR] Failed to fetch inline comments: {response.status_code}")
+        return
+    comments = response.json()
+
+    # Build set of valid (path, position) from current PR diff
+    changed_files = get_changed_files()
+    valid_positions = set()
+    for f in changed_files:
+        filename = f.get("filename", "")
+        patch = f.get("patch", "")
+        if patch:
+            # GitHub positions start at 1 for the first line of the diff hunk
+            hunk_lines = patch.split('\n')
+            for i, line in enumerate(hunk_lines):
+                # Only count lines that are additions or context (not removed)
+                if not line.startswith('-'):
+                    valid_positions.add((filename, i+1))
+
+    for comment in comments:
+        if '<!-- ai-code-review-inline -->' in comment.get('body', ''):
+            path = comment.get('path')
+            position = comment.get('position')
+            if (path, position) not in valid_positions:
+                del_url = comment['url']
+                del_resp = requests.delete(del_url, headers=HEADERS)
+                if del_resp.status_code == 204:
+                    print(f"[INFO] Deleted outdated inline bot comment: {del_url}")
+
+def delete_old_inline_bot_comment(path, position):
+    # Still delete at same path/position before posting new one (for up-to-date replacements)
+    url = f"https://api.github.com/repos/{REPO}/pulls/{PR_NUMBER}/comments"
+    response = requests.get(url, headers=HEADERS)
+    if response.status_code == 200:
+        comments = response.json()
+        for comment in comments:
+            if comment.get('position') == position and comment.get('path') == path:
+                if '<!-- ai-code-review-inline -->' in comment.get('body', ''):
+                    del_url = comment['url']
+                    del_resp = requests.delete(del_url, headers=HEADERS)
+                    if del_resp.status_code == 204:
+                        print(f"[INFO] Deleted old inline bot comment: {del_url}")
+    else:
+        print(f"[ERROR] Failed to fetch inline comments: {response.status_code}")
+
 def post_inline_comment(body, path, position):
     sha = get_latest_commit_sha()
     if not sha:
         return
+    delete_old_inline_bot_comment(path, position)
     url = f"https://api.github.com/repos/{REPO}/pulls/{PR_NUMBER}/comments"
+    # Add a unique marker to all bot inline comments
+    body = "<!-- ai-code-review-inline -->\n" + body
     payload = {
         "body": body,
         "commit_id": sha,
@@ -218,8 +272,8 @@ def delete_old_bot_comments():
     if response.status_code == 200:
         comments = response.json()
         for comment in comments:
-            # Identify bot comments by author or a unique marker in the body
-            if comment['user']['login'] == 'github-actions[bot]' or 'AI code review process' in comment.get('body', '') or 'AI code review' in comment.get('body', ''):
+            print(f"[DEBUG] Comment by {comment['user']['login']}: {comment['body'][:80]}")
+            if '<!-- ai-code-review-bot -->' in comment.get('body', ''):
                 del_url = comment['url']
                 del_resp = requests.delete(del_url, headers=HEADERS)
                 if del_resp.status_code == 204:
@@ -230,6 +284,8 @@ def delete_old_bot_comments():
 def post_pr_comment(body):
     delete_old_bot_comments()
     url = f"https://api.github.com/repos/{REPO}/issues/{PR_NUMBER}/comments"
+    # Add a unique marker so we can always identify bot comments
+    body = "<!-- ai-code-review-bot -->\n" + body
     payload = {"body": body}
     response = requests.post(url, headers=HEADERS, json=payload)
     if response.status_code != 201:
