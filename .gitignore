@@ -1,0 +1,23 @@
+# Ignore IDE/project files
+.idea/
+*.iml
+
+# Ignore macOS system files
+.DS_Store
+
+# Ignore Gradle build output
+.gradle/
+build/
+buildSrc/.gradle/
+buildSrc/build/
+
+# Ignore test output
+/test-results/
+
+# Ignore Android Studio build folders
+app/build/
+app/.cxx/
+
+# Ignore other common folders
+*.log
+/local.properties

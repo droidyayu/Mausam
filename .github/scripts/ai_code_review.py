@@ -219,6 +219,93 @@ def post_pr_comment(body):
     else:
         print(f"[INFO] PR summary comment posted.")
 
+import re
+
+def is_test_file(filename):
+    # Detects test files by name or directory
+    filename_lower = filename.lower()
+    test_dirs = ["test", "tests", "androidtest", "unittest", "integrationtest"]
+    if any(f"/{d}/" in filename_lower or f"\\{d}\\" in filename_lower for d in test_dirs):
+        return True
+    if re.search(r'(test.*\.(kt|java|py|js|ts|swift|go|rb|cpp|c|cs|php)$)|(_test\.(py|js|ts|go|rb|cpp|c|cs|php)$)', filename_lower):
+        return True
+    if re.search(r'(Test|_test|test_)[A-Za-z0-9_]*\.(kt|java|py|js|ts|swift|go|rb|cpp|c|cs|php)$', filename):
+        return True
+    return False
+
+def infer_source_filename(test_filename):
+    # Remove test-related directory
+    source_filename = re.sub(r'[/\\](test|tests|androidTest|unitTest|integrationTest)[/\\]', '/main/', test_filename, flags=re.IGNORECASE)
+    # Remove Test or _test from filename
+    source_filename = re.sub(r'(Test|_test)(\.[a-z0-9]+)$', r'\2', source_filename, flags=re.IGNORECASE)
+    # Remove test_ prefix
+    source_filename = re.sub(r'test_', '', source_filename, flags=re.IGNORECASE)
+    return source_filename
+
+def find_test_file_for_source(source_filename):
+    """
+    Given a source file, return the expected test file path (if it exists) in test or androidTest.
+    """
+    test_dirs = ["test", "androidTest"]
+    base = os.path.basename(source_filename)
+    name, ext = os.path.splitext(base)
+    test_patterns = [f"{name}_test{ext}", f"Test{name}{ext}"]
+    candidates = []
+    for d in test_dirs:
+        for pattern in test_patterns:
+            test_path = source_filename.replace("/main/", f"/{d}/").replace(base, pattern)
+            candidates.append(test_path)
+    return candidates
+
+def test_file_exists(repo, test_candidates):
+    for test_path in test_candidates:
+        url = f"https://api.github.com/repos/{repo}/contents/{test_path}"
+        response = requests.get(url, headers=HEADERS)
+        if response.status_code == 200:
+            return test_path
+    return None
+
+def generate_basic_test_file(source_code, source_filename, test_filename):
+    prompt = f"""
+You are an expert Android/Kotlin developer. Given the following source file, generate a basic but meaningful unit test file in Kotlin using JUnit, with filename: {test_filename}. Only output valid Kotlin code, no explanation.
+Source file: {source_filename}
+---
+{source_code}
+"""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    data = {"contents": [{"parts": [{"text": prompt}]}]}
+    response = requests.post(url, headers=headers, data=json.dumps(data))
+    if response.status_code == 200:
+        result = response.json()
+        code = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+        return code
+    else:
+        print(f"[ERROR] Gemini API error {response.status_code}: {response.text}")
+        return None
+
+def generate_test_code_for_missing_scenarios(source_code, test_filename, missing_scenarios):
+    prompt = f"""
+You are an expert Android/Kotlin developer. Given the following source file and a list of missing test scenarios, generate Kotlin/JUnit test code for those scenarios and output only the code (no explanation). Append to {test_filename}.
+Source file:
+---
+{source_code}
+---
+Missing scenarios:
+{missing_scenarios}
+"""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    data = {"contents": [{"parts": [{"text": prompt}]}]}
+    response = requests.post(url, headers=headers, data=json.dumps(data))
+    if response.status_code == 200:
+        result = response.json()
+        code = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+        return code
+    else:
+        print(f"[ERROR] Gemini API error {response.status_code}: {response.text}")
+        return None
+
 def main():
     print("[INFO] Starting AI code review process...")
     files = get_changed_files()
@@ -226,8 +313,8 @@ def main():
         print("[INFO] No changed files found.")
         return
 
-    test_file_exts = ("Test.kt", "Test.java", "_test.py", "test_", "Test.py")
     coverage_comments = []
+    test_generation_comments = []
 
     for f in files:
         filename = f.get("filename", "")
@@ -237,36 +324,45 @@ def main():
         print(f"[INFO] Processing file: {filename} (status: {status})")
 
         # --- Regular code review for Kotlin/Java ---
-        if filename.endswith((".kt", ".java")) and not filename.endswith(test_file_exts):
+        if filename.endswith((".kt", ".java")) and not is_test_file(filename):
             if hunk and status in ["modified", "added"]:
                 comment = generate_review_comment(hunk, filename)
                 post_inline_comment(comment, filename, position=1)
 
+            # --- Check for missing test file ---
+            test_candidates = find_test_file_for_source(filename)
+            test_path = test_file_exists(REPO, test_candidates)
+            if not test_path:
+                source_code = fetch_file_content(REPO, filename)
+                # Pick first candidate for new test file name
+                new_test_filename = test_candidates[0]
+                test_code = generate_basic_test_file(source_code, filename, new_test_filename)
+                if test_code:
+                    test_generation_comments.append(f"**Auto-generated test file suggestion for `{filename}`:**\nCreate `{new_test_filename}` with the following content:\n\n```kotlin\n{test_code}\n```")
+
         # --- Test coverage analysis ---
-        if filename.endswith(test_file_exts):
+        if is_test_file(filename):
             test_code = fetch_file_content(REPO, filename)
-            # Try to infer the source file path
-            if filename.endswith("Test.kt"):
-                source_filename = filename.replace("Test.kt", ".kt").replace("/test/", "/main/")
-            elif filename.endswith("Test.java"):
-                source_filename = filename.replace("Test.java", ".java").replace("/test/", "/main/")
-            elif filename.endswith("_test.py"):
-                source_filename = filename.replace("_test.py", ".py")
-            elif filename.endswith("Test.py"):
-                source_filename = filename.replace("Test.py", ".py")
-            elif filename.startswith("test_") and filename.endswith(".py"):
-                source_filename = filename.replace("test_", "", 1)
-            else:
-                source_filename = None
+            source_filename = infer_source_filename(filename)
             source_code = fetch_file_content(REPO, source_filename) if source_filename else ''
             if source_code:
                 coverage_comment = generate_test_coverage_comment(source_code, test_code, source_filename, filename)
                 if coverage_comment and not any(x in coverage_comment.lower() for x in ["all important scenarios are covered", "no missing test"]):
                     coverage_comments.append(f"**Test coverage review for `{filename}`:**\n{coverage_comment}")
+                    # Try to extract missing scenarios and generate code
+                    missing = coverage_comment
+                    test_stub_code = generate_test_code_for_missing_scenarios(source_code, filename, missing)
+                    if test_stub_code:
+                        test_generation_comments.append(f"**Suggested test stubs for `{filename}`:**\nAdd the following code to improve coverage:\n\n```kotlin\n{test_stub_code}\n```")
 
-    # Post summary comment if any missing/weak coverage is found
+    # Post summary comment if any missing/weak coverage is found or test files generated
+    summary_sections = []
     if coverage_comments:
-        summary = "\n\n".join(coverage_comments)
+        summary_sections.append("\n\n".join(coverage_comments))
+    if test_generation_comments:
+        summary_sections.append("\n\n".join(test_generation_comments))
+    if summary_sections:
+        summary = "\n\n---\n\n".join(summary_sections)
         post_pr_comment(summary)
 
 
