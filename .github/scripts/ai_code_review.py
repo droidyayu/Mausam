@@ -445,7 +445,7 @@ def main():
                 new_test_filename = test_candidates[0]
                 test_code = generate_basic_test_file(source_code, filename, new_test_filename)
                 if test_code:
-                    test_generation_comments.append(f"**Auto-generated test file suggestion for `{filename}`:**\nCreate `{new_test_filename}` with the following content:\n\n```kotlin\n{test_code}\n```")
+                    test_generation_comments.append(f"**Auto-generated unit test for `{os.path.basename(filename)}`**\n\nCreate this file:\n`{new_test_filename}`\n\n```kotlin\n{test_code}\n```")
 
         # --- Test coverage analysis ---
         if is_test_file(filename):
@@ -455,7 +455,7 @@ def main():
             if source_code:
                 coverage_comment = generate_test_coverage_comment(source_code, test_code, source_filename, filename)
                 if coverage_comment:
-                    coverage_comments.append(f"**Test coverage review for `{filename}`:**\n{coverage_comment}")
+                    coverage_comments.append(f"**Test coverage review for `{os.path.basename(filename)}`**\n\n{coverage_comment.strip()}\n")
                     # Try to extract missing scenarios and generate code
                     missing = coverage_comment
                     test_stub_code = generate_test_code_for_missing_scenarios(source_code, filename, missing)
