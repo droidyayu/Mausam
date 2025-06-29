@@ -201,22 +201,39 @@ def post_inline_comment(body, path, position):
     sha = get_latest_commit_sha()
     if not sha:
         return
-    delete_old_inline_bot_comment(path, position)
     url = f"https://api.github.com/repos/{REPO}/pulls/{PR_NUMBER}/comments"
     # Add a unique marker to all bot inline comments
     body = "<!-- ai-code-review-inline -->\n" + body
-    payload = {
-        "body": body,
-        "commit_id": sha,
-        "path": path,
-        "position": position
-    }
-    print(f"[INFO] Posting comment to {path} at position {position}")
-    response = requests.post(url, headers=HEADERS, json=payload)
-    if response.status_code != 201:
-        print(f"[ERROR] Failed to post comment: {response.status_code} - {response.text}")
+    # Try to find an existing bot inline comment at this path/position
+    response = requests.get(url, headers=HEADERS)
+    comment_id_to_update = None
+    if response.status_code == 200:
+        comments = response.json()
+        for comment in comments:
+            if comment.get('position') == position and comment.get('path') == path:
+                if '<!-- ai-code-review-inline -->' in comment.get('body', ''):
+                    comment_id_to_update = comment['id']
+                    break
+    if comment_id_to_update:
+        patch_url = f"https://api.github.com/repos/{REPO}/pulls/comments/{comment_id_to_update}"
+        patch_resp = requests.patch(patch_url, headers=HEADERS, json={"body": body})
+        if patch_resp.status_code != 200:
+            print(f"[ERROR] Failed to update inline comment: {patch_resp.status_code} - {patch_resp.text}")
+        else:
+            print(f"[INFO] Updated inline comment on {path} at position {position}")
     else:
-        print(f"[INFO] Comment posted on {path}")
+        payload = {
+            "body": body,
+            "commit_id": sha,
+            "path": path,
+            "position": position
+        }
+        print(f"[INFO] Posting comment to {path} at position {position}")
+        response = requests.post(url, headers=HEADERS, json=payload)
+        if response.status_code != 201:
+            print(f"[ERROR] Failed to post comment: {response.status_code} - {response.text}")
+        else:
+            print(f"[INFO] Comment posted on {path}")
 
 
 def fetch_file_content(repo, path, ref=None):
@@ -282,16 +299,32 @@ def delete_old_bot_comments():
         print(f"[ERROR] Failed to fetch comments: {response.status_code}")
 
 def post_pr_comment(body):
-    delete_old_bot_comments()
     url = f"https://api.github.com/repos/{REPO}/issues/{PR_NUMBER}/comments"
     # Add a unique marker so we can always identify bot comments
     body = "<!-- ai-code-review-bot -->\n" + body
-    payload = {"body": body}
-    response = requests.post(url, headers=HEADERS, json=payload)
-    if response.status_code != 201:
-        print(f"[ERROR] Failed to post PR comment: {response.status_code} - {response.text}")
+    # Try to find an existing bot summary comment
+    response = requests.get(url, headers=HEADERS)
+    comment_id_to_update = None
+    if response.status_code == 200:
+        comments = response.json()
+        for comment in comments:
+            if '<!-- ai-code-review-bot -->' in comment.get('body', ''):
+                comment_id_to_update = comment['id']
+                break
+    if comment_id_to_update:
+        patch_url = f"https://api.github.com/repos/{REPO}/issues/comments/{comment_id_to_update}"
+        patch_resp = requests.patch(patch_url, headers=HEADERS, json={"body": body})
+        if patch_resp.status_code != 200:
+            print(f"[ERROR] Failed to update PR summary comment: {patch_resp.status_code} - {patch_resp.text}")
+        else:
+            print(f"[INFO] Updated PR summary comment.")
     else:
-        print(f"[INFO] PR summary comment posted.")
+        payload = {"body": body}
+        response = requests.post(url, headers=HEADERS, json=payload)
+        if response.status_code != 201:
+            print(f"[ERROR] Failed to post PR comment: {response.status_code} - {response.text}")
+        else:
+            print(f"[INFO] PR summary comment posted.")
 
 import re
 
