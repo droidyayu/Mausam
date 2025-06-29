@@ -212,7 +212,23 @@ List any important test scenarios that are missing or weakly covered. Format you
         print(f"[ERROR] Gemini API error {response.status_code}: {response.text}")
         return None
 
+def delete_old_bot_comments():
+    url = f"https://api.github.com/repos/{REPO}/issues/{PR_NUMBER}/comments"
+    response = requests.get(url, headers=HEADERS)
+    if response.status_code == 200:
+        comments = response.json()
+        for comment in comments:
+            # Identify bot comments by author or a unique marker in the body
+            if comment['user']['login'] == 'github-actions[bot]' or 'AI code review process' in comment.get('body', '') or 'AI code review' in comment.get('body', ''):
+                del_url = comment['url']
+                del_resp = requests.delete(del_url, headers=HEADERS)
+                if del_resp.status_code == 204:
+                    print(f"[INFO] Deleted old bot comment: {del_url}")
+    else:
+        print(f"[ERROR] Failed to fetch comments: {response.status_code}")
+
 def post_pr_comment(body):
+    delete_old_bot_comments()
     url = f"https://api.github.com/repos/{REPO}/issues/{PR_NUMBER}/comments"
     payload = {"body": body}
     response = requests.post(url, headers=HEADERS, json=payload)
@@ -349,7 +365,7 @@ def main():
             source_code = fetch_file_content(REPO, source_filename) if source_filename else ''
             if source_code:
                 coverage_comment = generate_test_coverage_comment(source_code, test_code, source_filename, filename)
-                if coverage_comment and not any(x in coverage_comment.lower() for x in ["all important scenarios are covered", "no missing test"]):
+                if coverage_comment:
                     coverage_comments.append(f"**Test coverage review for `{filename}`:**\n{coverage_comment}")
                     # Try to extract missing scenarios and generate code
                     missing = coverage_comment
